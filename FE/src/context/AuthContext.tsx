@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
-import apiClient, { setAccessToken, setRefreshToken, getRefreshToken } from '../lib/axios';
+import apiClient, { setAccessToken } from '../lib/axios';
 
 interface User {
   id: number;
@@ -41,25 +41,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const broadcastChannel = useRef<BroadcastChannel | null>(null);
 
-  // Initialize: Check if refresh token exists and restore session
+  // Initialize BroadcastChannel for multi-tab sync
+  useEffect(() => {
+    broadcastChannel.current = new BroadcastChannel('auth-channel');
+    
+    return () => {
+      broadcastChannel.current?.close();
+    };
+  }, []);
+
+  // Initialize: Try to restore session from HttpOnly cookie
   useEffect(() => {
     const initializeAuth = async () => {
-      const refreshToken = getRefreshToken();
-      
-      if (refreshToken) {
-        try {
-          // Restore session by refreshing token and fetching user data
-          await refreshAccessToken();
-          console.log('Session restored successfully');
-        } catch (error) {
-          console.error('Failed to restore session:', error);
-          // Clear invalid tokens
-          setAccessToken(null);
-          setRefreshToken(null);
-          setUser(null);
-          setToken(null);
-        }
+      try {
+        // Try to restore session by calling refresh endpoint
+        // Cookie will be sent automatically
+        await refreshAccessToken();
+      } catch (error) {
+        // No valid session, user needs to login
+        setAccessToken(null);
+        setUser(null);
+        setToken(null);
       }
       
       setIsLoading(false);
@@ -67,7 +71,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     initializeAuth();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Empty deps - only run once on mount
+  }, []);
 
   // Silent Token Refresh: Automatically refresh before expiration
   useEffect(() => {
@@ -94,10 +98,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   }, [token, user]);
 
-  // Multi-Tab Synchronization: Sync auth state across browser tabs
+  // Multi-Tab Synchronization using BroadcastChannel
   useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'refreshToken' && e.newValue === null) {
+    if (!broadcastChannel.current) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data.type === 'LOGOUT') {
         setAccessToken(null);
         setUser(null);
         setToken(null);
@@ -105,33 +111,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
           window.location.href = '/login';
         }
-      }
-      
-      if (e.key === 'refreshToken' && e.oldValue === null && e.newValue !== null) {
+      } else if (event.data.type === 'LOGIN') {
         refreshAccessToken().catch(console.error);
       }
     };
 
-    window.addEventListener('storage', handleStorageChange);
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    broadcastChannel.current.onmessage = handleMessage;
   }, [])
 
   const login = async (email: string, password: string) => {
     try {
       const response = await apiClient.post('/auth/login', { email, password });
-      const { user: userData, accessToken, refreshToken } = response.data.data;
+      const { user: userData, accessToken } = response.data.data;
 
-      // Store tokens
       setAccessToken(accessToken);
-      setRefreshToken(refreshToken);
-      
-      // Update state
       setUser(userData);
       setToken(accessToken);
+
+      // Notify other tabs about login
+      broadcastChannel.current?.postMessage({ type: 'LOGIN' });
     } catch (error: any) {
       throw new Error(error.response?.data?.message || 'Login failed');
     }
@@ -139,41 +137,30 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const logout = async () => {
     try {
-      const refreshToken = getRefreshToken();
-      
-      if (refreshToken) {
-        // Call logout endpoint to revoke refresh token
-        await apiClient.post('/auth/logout', { refreshToken });
-      }
+      // Call logout endpoint - cookie sent automatically
+      await apiClient.post('/auth/logout');
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
-      // Clear tokens and user data regardless of API call result
       setAccessToken(null);
-      setRefreshToken(null);
       setUser(null);
       setToken(null);
+
+      // Notify other tabs about logout
+      broadcastChannel.current?.postMessage({ type: 'LOGOUT' });
     }
   };
 
   const refreshAccessToken = async () => {
-    const refreshToken = getRefreshToken();
-    
-    if (!refreshToken) {
-      throw new Error('No refresh token available');
-    }
-
     try {
-      // Step 1: Refresh the access token
-      const refreshResponse = await apiClient.post('/auth/refresh', { refreshToken });
+      // Refresh token sent automatically via HttpOnly cookie
+      const refreshResponse = await apiClient.post('/auth/refresh');
       const { accessToken: newAccessToken } = refreshResponse.data.data;
 
-      // Step 2: Update access token in memory
       setAccessToken(newAccessToken);
       setToken(newAccessToken);
 
-      // Step 3: Fetch user data using the new access token
-      // This ensures user state is always in sync after refresh
+      // Fetch user data using the new access token
       const userResponse = await apiClient.get('/auth/me');
       const userData = userResponse.data.data;
       

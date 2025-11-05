@@ -12,7 +12,7 @@ const apiClient = axios.create({
   withCredentials: true,
 });
 
-// Token management
+// Token management - Access token only (refresh token in HttpOnly cookie)
 let accessToken: string | null = null;
 
 export const setAccessToken = (token: string | null) => {
@@ -20,16 +20,6 @@ export const setAccessToken = (token: string | null) => {
 };
 
 export const getAccessToken = () => accessToken;
-
-export const getRefreshToken = () => localStorage.getItem('refreshToken');
-
-export const setRefreshToken = (token: string | null) => {
-  if (token) {
-    localStorage.setItem('refreshToken', token);
-  } else {
-    localStorage.removeItem('refreshToken');
-  }
-};
 
 // Request interceptor - Attach access token to every request
 apiClient.interceptors.request.use(
@@ -95,25 +85,10 @@ apiClient.interceptors.response.use(
     originalRequest._retry = true;
     isRefreshing = true;
 
-    const refreshToken = getRefreshToken();
-
-    if (!refreshToken) {
-      // No refresh token, logout user
-      processQueue(new Error('No refresh token available'), null);
-      isRefreshing = false;
-      
-      // Clear tokens and redirect to login
-      setAccessToken(null);
-      setRefreshToken(null);
-      window.location.href = '/login';
-      
-      return Promise.reject(error);
-    }
-
     try {
-      // Call refresh endpoint
-      const response = await axios.post(`${API_URL}/auth/refresh`, {
-        refreshToken,
+      // Call refresh endpoint - refresh token sent automatically via cookie
+      const response = await axios.post(`${API_URL}/auth/refresh`, {}, {
+        withCredentials: true,
       });
 
       const { accessToken: newAccessToken } = response.data.data;
@@ -135,7 +110,6 @@ apiClient.interceptors.response.use(
       processQueue(refreshError as Error, null);
       
       setAccessToken(null);
-      setRefreshToken(null);
       window.location.href = '/login';
       
       return Promise.reject(refreshError);
