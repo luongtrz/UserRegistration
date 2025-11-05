@@ -59,6 +59,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Try to restore session by calling refresh endpoint
         // Cookie will be sent automatically
         await refreshAccessToken();
+        // Schedule silent refresh after successful restore
+        scheduleTokenRefresh();
       } catch (error) {
         // No valid session, user needs to login
         setAccessToken(null);
@@ -73,30 +75,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Silent Token Refresh: Automatically refresh before expiration
-  useEffect(() => {
-    if (refreshTimerRef.current) {
-      clearTimeout(refreshTimerRef.current);
-    }
 
-    if (token && user) {
-      const refreshTime = ACCESS_TOKEN_EXPIRATION - REFRESH_BUFFER;
-      
-      refreshTimerRef.current = setTimeout(async () => {
-        try {
-          await refreshAccessToken();
-        } catch (error) {
-          console.error('Silent refresh failed:', error);
-        }
-      }, refreshTime);
-    }
-
-    return () => {
-      if (refreshTimerRef.current) {
-        clearTimeout(refreshTimerRef.current);
-      }
-    };
-  }, [token, user]);
 
   // Multi-Tab Synchronization using BroadcastChannel
   useEffect(() => {
@@ -128,11 +107,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setUser(userData);
       setToken(accessToken);
 
-      // Notify other tabs about login
+      // Schedule silent refresh for this new session
+      scheduleTokenRefresh();
+
+      // Notify other tabs about login (so they can refresh their session)
+      // Note: BroadcastChannel doesn't send to the current tab
       broadcastChannel.current?.postMessage({ type: 'LOGIN' });
     } catch (error: any) {
       throw new Error(error.response?.data?.message || 'Login failed');
     }
+  };
+
+  const scheduleTokenRefresh = () => {
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+    }
+
+    const refreshTime = ACCESS_TOKEN_EXPIRATION - REFRESH_BUFFER;
+    console.log(`Silent refresh scheduled in ${refreshTime / 1000} seconds`);
+
+    refreshTimerRef.current = setTimeout(async () => {
+      console.log('Executing silent token refresh...');
+      try {
+        await refreshAccessToken();
+        // After refresh, schedule next refresh
+        scheduleTokenRefresh();
+      } catch (error) {
+        console.error('Silent refresh failed:', error);
+      }
+    }, refreshTime);
   };
 
   const logout = async () => {
