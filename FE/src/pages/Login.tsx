@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Link, useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
+import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,11 +18,9 @@ const loginSchema = z.object({
 
 type LoginFormData = z.infer<typeof loginSchema>;
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-const API_AUTH_LOGIN = import.meta.env.VITE_API_AUTH_LOGIN || '/auth/login';
-
 export default function LoginPage() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [errorMessage, setErrorMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
@@ -33,28 +32,13 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
   });
 
-  // React Query mutation - gọi API trực tiếp
+  // React Query mutation using AuthContext
   const mutation = useMutation({
     mutationFn: async (data: { email: string; password: string }) => {
-      const response = await fetch(`${API_URL}${API_AUTH_LOGIN}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Login failed');
-      }
-
-      return response.json();
+      await login(data.email, data.password);
     },
-    onSuccess: (data) => {
-      if (data.data) {
-        localStorage.setItem('user', JSON.stringify(data.data));
-      }
-      navigate('/');
+    onSuccess: () => {
+      navigate('/dashboard');
     },
     onError: (error: Error) => {
       setErrorMessage(error.message);

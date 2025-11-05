@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
+import apiClient from '@/lib/axios';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -8,10 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { ArrowLeft, Users as UsersIcon, AlertTriangle, User, Plus, Calendar, Mail } from 'lucide-react';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-const API_USER_LIST = import.meta.env.VITE_API_USER_LIST || '/user/list';
+import { ArrowLeft, Users as UsersIcon, AlertTriangle, User, Plus, Calendar, Mail, LogOut } from 'lucide-react';
 
 interface User {
   id: string;
@@ -21,23 +20,23 @@ interface User {
 
 export default function Users() {
   const navigate = useNavigate();
+  const { logout } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/login');
+    } catch (error) {
+      console.error('Logout error:', error);
+      navigate('/login');
+    }
+  };
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['users'],
     queryFn: async () => {
-      const response = await fetch(`${API_URL}${API_USER_LIST}`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to fetch users');
-      }
-
-      const result = await response.json();
-      return result.data as User[];
+      const response = await apiClient.get('/user/list');
+      return response.data.data as User[];
     },
     staleTime: 5 * 1000, // 5s
     gcTime: 10 * 1000,  // 10s
@@ -65,14 +64,24 @@ export default function Users() {
             </h1>
             <p className="text-gray-600 mt-1.5 text-sm">View and manage registered users</p>
           </div>
-          <Button
-            onClick={() => navigate('/')}
-            variant="outline"
-            className="shadow-sm hover:shadow-md transition-all duration-300 transform hover:scale-105 border-purple-600 text-purple-600 hover:bg-purple-50"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Home
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => navigate('/dashboard')}
+              variant="outline"
+              className="shadow-sm hover:shadow-md transition-all duration-300 transform hover:scale-105 border-purple-600 text-purple-600 hover:bg-purple-50"
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Dashboard
+            </Button>
+            <Button
+              onClick={handleLogout}
+              variant="destructive"
+              className="shadow-sm hover:shadow-md transition-all duration-300"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Logout
+            </Button>
+          </div>
         </div>
 
         <Card className="shadow-2xl border-0 overflow-hidden backdrop-blur-sm bg-white/95">

@@ -1,6 +1,7 @@
-import { Body, Controller, Post, Get, HttpCode, HttpStatus } from '@nestjs/common';
+import { Body, Controller, Post, Get, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('user')
 export class UsersController {
@@ -18,6 +19,7 @@ export class UsersController {
   }
 
   @Get('list')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async getAllUsers() {
     const users = await this.usersService.findAll();

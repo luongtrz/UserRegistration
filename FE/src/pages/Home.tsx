@@ -40,10 +40,10 @@ export default function HomePage() {
             </Button>
           </Link>
 
-          <Link to="/users" className="block">
+          <Link to="/dashboard" className="block">
             <Button variant="secondary" className="w-full bg-gradient-to-r from-gray-100 to-gray-200 hover:from-gray-200 hover:to-gray-300 text-gray-700 shadow-md hover:shadow-lg transition-all duration-300 transform hover:scale-105 text-sm sm:text-base py-2.5 sm:py-3" size="lg">
               <Users className="w-4 h-4 mr-2" />
-              View All Users
+              Go to Dashboard
             </Button>
           </Link>
 
