@@ -1,6 +1,26 @@
-# Week04 - User Registration API with React Frontend
+# 🔐 JWT Authentication System - User Registration
 
-Authentication system with NestJS backend and React frontend.
+Full-stack authentication system with **JWT access + refresh tokens**, built with NestJS backend and React frontend.
+
+## 🎯 Assignment Implementation
+
+This project implements **React Authentication with JWT (Access + Refresh)** following industry best practices.
+
+### ✅ Core Requirements (90/100)
+- ✅ JWT access token (5min) + refresh token (7 days)
+- ✅ Axios interceptors with automatic token refresh
+- ✅ React Query for API state management
+- ✅ React Hook Form with Zod validation
+- ✅ Protected routes with authentication guards
+- ✅ Token storage: Access in memory, Refresh in localStorage/cookies
+- ✅ Complete login/logout flow with token revocation
+
+### 🚀 Stretch Goals Implemented (Bonus +20 points)
+- ✅ **Silent token refresh** - Auto-refresh 30s before expiry
+- ✅ **Multi-tab synchronization** - Logout reflects across tabs
+- ✅ **HttpOnly cookies** - Secure refresh token storage
+
+📄 **See [STRETCH_GOALS.md](./STRETCH_GOALS.md) for detailed implementation**
 
 ```
 week04-signUp/

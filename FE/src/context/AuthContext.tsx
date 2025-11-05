@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import apiClient, { setAccessToken, setRefreshToken, getRefreshToken } from '../lib/axios';
 
@@ -18,6 +18,10 @@ interface AuthContextType {
   refreshAccessToken: () => Promise<void>;
 }
 
+// Token expiration configuration
+const ACCESS_TOKEN_EXPIRATION = 5 * 60 * 1000; // 5 minutes in milliseconds
+const REFRESH_BUFFER = 30 * 1000; // Refresh 30 seconds before expiry
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const useAuth = () => {
@@ -36,6 +40,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Initialize: Check if refresh token exists and restore session
   useEffect(() => {
@@ -63,6 +68,74 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     initializeAuth();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty deps - only run once on mount
+
+  // 🔥 STRETCH GOAL 1: Silent Token Refresh
+  // Automatically refresh token before it expires
+  useEffect(() => {
+    // Clear any existing timer
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+    }
+
+    // Only set timer if user is authenticated
+    if (token && user) {
+      const refreshTime = ACCESS_TOKEN_EXPIRATION - REFRESH_BUFFER;
+      
+      console.log(`🔄 Silent refresh scheduled in ${refreshTime / 1000} seconds`);
+      
+      refreshTimerRef.current = setTimeout(async () => {
+        try {
+          console.log('🔄 Performing silent token refresh...');
+          await refreshAccessToken();
+          console.log('✅ Silent refresh successful');
+        } catch (error) {
+          console.error('❌ Silent refresh failed:', error);
+          // Don't logout on silent refresh failure - let 401 interceptor handle it
+        }
+      }, refreshTime);
+    }
+
+    // Cleanup timer on unmount or token change
+    return () => {
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+      }
+    };
+  }, [token, user]); // Re-run when token changes
+
+  // 🔥 STRETCH GOAL 2: Multi-Tab Synchronization
+  // Listen for logout events in other tabs
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      // Detect when refreshToken is removed in another tab
+      if (e.key === 'refreshToken' && e.newValue === null) {
+        console.log('🔄 Logout detected in another tab, syncing...');
+        // Clear local state to sync logout across tabs
+        setAccessToken(null);
+        setUser(null);
+        setToken(null);
+        
+        // Optionally redirect to login
+        if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
+          window.location.href = '/login';
+        }
+      }
+      
+      // Detect when refreshToken is added in another tab (login sync)
+      if (e.key === 'refreshToken' && e.oldValue === null && e.newValue !== null) {
+        console.log('🔄 Login detected in another tab, syncing...');
+        // Restore session in this tab
+        refreshAccessToken().catch(console.error);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const login = async (email: string, password: string) => {
     try {

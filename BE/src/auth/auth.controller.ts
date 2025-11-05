@@ -1,4 +1,5 @@
-import { Body, Controller, HttpCode, Post, Get, UnauthorizedException, HttpStatus, UseGuards, Request } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, Get, UnauthorizedException, HttpStatus, UseGuards, Request, Res, Req } from '@nestjs/common';
+import { Response, Request as ExpressRequest } from 'express';
 import { UsersService } from '../users/users.service';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { AuthService } from './auth.service';
@@ -13,9 +14,13 @@ export class AuthController {
   ) {}
   
   // LOGIN - Returns JWT tokens
+  // 🔥 STRETCH GOAL 3: Set refresh token in HttpOnly cookie
   @HttpCode(HttpStatus.OK)
   @Post('login')
-  async login(@Body() dto: CreateUserDto) {
+  async login(
+    @Body() dto: CreateUserDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
     // Validate credentials
     const found = await this.users.findByEmail(dto.email);
     const ok = await bcrypt.compare(dto.password, found.password);
@@ -27,6 +32,15 @@ export class AuthController {
     const accessToken = await this.authService.generateAccessToken(found.id, found.email);
     const refreshToken = await this.authService.generateRefreshToken(found.id);
 
+    // 🍪 Set refresh token as HttpOnly cookie
+    response.cookie('refreshToken', refreshToken, {
+      httpOnly: true,        // ✅ Cannot be accessed by JavaScript (XSS protection)
+      secure: process.env.NODE_ENV === 'production', // ✅ HTTPS only in production
+      sameSite: 'lax',       // ✅ CSRF protection (use 'strict' for stronger protection)
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: '/',
+    });
+
     return {
       success: true,
       message: 'Login successful',
@@ -37,15 +51,22 @@ export class AuthController {
           createdAt: found.createdAt,
         },
         accessToken,
-        refreshToken,
+        refreshToken, // Also return in response body for backward compatibility
       },
     };
   }
 
   // REFRESH TOKEN - Get new access token using refresh token
+  // 🔥 STRETCH GOAL 3: Read refresh token from cookie or body
   @HttpCode(HttpStatus.OK)
   @Post('refresh')
-  async refresh(@Body('refreshToken') refreshToken: string) {
+  async refresh(
+    @Body('refreshToken') bodyRefreshToken: string,
+    @Req() request: ExpressRequest,
+  ) {
+    // Try to get refresh token from cookie first, then from body
+    const refreshToken = request.cookies?.refreshToken || bodyRefreshToken;
+
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh token required');
     }
@@ -66,12 +87,28 @@ export class AuthController {
   }
 
   // LOGOUT - Revoke refresh token
+  // 🔥 STRETCH GOAL 3: Read refresh token from cookie or body, then clear cookie
   @HttpCode(HttpStatus.OK)
   @Post('logout')
-  async logout(@Body('refreshToken') refreshToken: string) {
+  async logout(
+    @Body('refreshToken') bodyRefreshToken: string,
+    @Req() request: ExpressRequest,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    // Try to get refresh token from cookie first, then from body
+    const refreshToken = request.cookies?.refreshToken || bodyRefreshToken;
+
     if (refreshToken) {
       await this.authService.revokeRefreshToken(refreshToken);
     }
+
+    // 🍪 Clear the refresh token cookie
+    response.clearCookie('refreshToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+    });
 
     return {
       success: true,
